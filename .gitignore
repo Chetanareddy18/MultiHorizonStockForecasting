@@ -1,0 +1,62 @@
+# ----------------------------
+# Python
+# ----------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual Environment
+venv/
+env/
+.venv/
+ENV/
+
+# ----------------------------
+# Data (DO NOT PUSH DATA)
+# ----------------------------
+data/raw/
+data/processed/
+data/final/
+data/predictions/
+
+# If you want to ignore all data folder:
+# data/
+
+# ----------------------------
+# Model Outputs
+# ----------------------------
+outputs/
+lightning_logs/
+*.ckpt
+*.pth
+*.pt
+*.h5
+
+# ----------------------------
+# Logs
+# ----------------------------
+*.log
+
+# ----------------------------
+# Jupyter
+# ----------------------------
+.ipynb_checkpoints/
+
+# ----------------------------
+# OS Files
+# ----------------------------
+.DS_Store
+Thumbs.db
+
+# ----------------------------
+# VS Code
+# ----------------------------
+.vscode/
+
+# ----------------------------
+# Testing / temp
+# ----------------------------
+*.tmp
+*.temp
