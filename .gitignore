@@ -21,6 +21,9 @@ data/processed/
 data/final/
 data/predictions/
 
+# External / out-of-sample dataset (large, do not push)
+new_data/
+
 # If you want to ignore all data folder:
 # data/
 
