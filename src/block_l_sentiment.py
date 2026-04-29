@@ -15,15 +15,21 @@ def compute_synthetic_sentiment(
     - Horizon-specific volatility deviation
 
     Output:
-        Sentiment score in range [-1, 1]
+        (sentiment score in [-1, 1], latest data date as Timestamp)
     """
+
+    # Fall back to the consolidated master dataset if the multi-horizon
+    # version (block_i) hasn't been generated yet.
+    fallback_path = "data/final/master_dataset.csv"
+    if not os.path.exists(data_path) and os.path.exists(fallback_path):
+        data_path = fallback_path
 
     try:
         df = pd.read_csv(data_path)
 
         if "Close" not in df.columns:
             print("Close column missing. Returning neutral sentiment.")
-            return 0.0
+            return 0.0, pd.Timestamp.today().normalize()
 
         # Horizon-specific volatility lookback
         if horizon <= 3:
@@ -42,7 +48,7 @@ def compute_synthetic_sentiment(
         df = df.dropna()
 
         if len(df) == 0:
-            return 0.0
+            return 0.0, pd.Timestamp.today().normalize()
 
         latest = df.iloc[-1]
 
@@ -66,11 +72,21 @@ def compute_synthetic_sentiment(
 
         sentiment = np.clip(sentiment, -1, 1)
 
-        return float(sentiment)
+        # Determine the actual data date for the latest record so the
+        # sentiment timestamp aligns with the underlying market data.
+        if "Date" in df.columns:
+            try:
+                latest_date = pd.to_datetime(df["Date"].iloc[-1])
+            except Exception:
+                latest_date = pd.Timestamp.today().normalize()
+        else:
+            latest_date = pd.Timestamp.today().normalize()
+
+        return float(sentiment), latest_date
 
     except Exception as e:
         print(f"Error computing sentiment: {e}")
-        return 0.0
+        return 0.0, pd.Timestamp.today().normalize()
 
 
 # -----------------------------------------
@@ -86,7 +102,7 @@ if __name__ == "__main__":
     else:
         horizon = 1
 
-    sentiment_value = compute_synthetic_sentiment(horizon=horizon)
+    sentiment_value, sentiment_date = compute_synthetic_sentiment(horizon=horizon)
 
     print(f"\nHorizon {horizon}D Sentiment:")
     print(sentiment_value)
@@ -96,7 +112,7 @@ if __name__ == "__main__":
     output_path = f"outputs/sentiment_score_{horizon}D.csv"
 
     df_out = pd.DataFrame({
-        "Date": [pd.Timestamp.today()],
+        "Date": [sentiment_date],
         "Sentiment": [sentiment_value]
     })
 

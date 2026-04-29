@@ -14,7 +14,9 @@ HORIZONS = [1, 7, 30]   # Short, Medium, Long
 def evaluate_model(y_true, y_pred):
     mae = mean_absolute_error(y_true, y_pred)
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
-    mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+    # Safe MAPE: avoid div-by-zero
+    denom = np.where(np.abs(y_true) < 1e-8, 1e-8, np.abs(y_true))
+    mape = np.mean(np.abs((y_true - y_pred) / denom)) * 100
     return mae, rmse, mape
 
 
@@ -87,7 +89,7 @@ def main():
             "Prediction": y_pred
         })
 
-        pred_df.to_csv(f"outputs/ml_predictions_{horizon}D.csv")
+        pred_df.to_csv(f"outputs/ml_predictions_{horizon}D.csv", index=False)
 
         results.append({
             "Horizon": f"{horizon}D",

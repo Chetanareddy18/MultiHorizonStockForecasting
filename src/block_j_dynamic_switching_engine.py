@@ -170,15 +170,44 @@ def main():
     tft = pd.read_csv(f"outputs/tft_predictions_{horizon}D.csv")
     prophet = pd.read_csv(f"outputs/prophet_predictions_{horizon}D.csv")
 
-    min_len = min(len(lstm), len(tft), len(prophet))
-    lstm = lstm.tail(min_len)
-    tft = tft.tail(min_len)
-    prophet = prophet.tail(min_len)
+    # Align all three model outputs by Date when possible. If any of the
+    # writers did not include a Date column (e.g. TFT), fall back to a
+    # tail-based row-wise alignment.
+    has_dates = all("Date" in df.columns for df in (lstm, tft, prophet))
 
-    y_true = lstm["Actual"].values
-    lstm_pred = lstm["Prediction"].values
-    tft_pred = tft["Prediction"].values
-    prophet_pred = prophet["Prediction"].values
+    if has_dates:
+        lstm_r = lstm.rename(columns={"Prediction": "lstm_pred", "Actual": "actual_lstm"})
+        tft_r = tft.rename(columns={"Prediction": "tft_pred"})
+        prophet_r = prophet.rename(columns={"Prediction": "prophet_pred"})
+
+        merged = (
+            lstm_r[["Date", "actual_lstm", "lstm_pred"]]
+            .merge(tft_r[["Date", "tft_pred"]], on="Date", how="inner")
+            .merge(prophet_r[["Date", "prophet_pred"]], on="Date", how="inner")
+        )
+    else:
+        merged = pd.DataFrame()
+
+    if len(merged) == 0:
+        # Fallback: row-wise tail alignment when dates can't be matched.
+        min_len = min(len(lstm), len(tft), len(prophet))
+        date_series = (
+            lstm["Date"].tail(min_len).values
+            if "Date" in lstm.columns
+            else pd.date_range(end=pd.Timestamp.today(), periods=min_len).strftime("%Y-%m-%d")
+        )
+        merged = pd.DataFrame({
+            "Date": date_series,
+            "actual_lstm": lstm["Actual"].tail(min_len).values,
+            "lstm_pred": lstm["Prediction"].tail(min_len).values,
+            "tft_pred": tft["Prediction"].tail(min_len).values,
+            "prophet_pred": prophet["Prediction"].tail(min_len).values,
+        })
+
+    y_true = merged["actual_lstm"].values
+    lstm_pred = merged["lstm_pred"].values
+    tft_pred = merged["tft_pred"].values
+    prophet_pred = merged["prophet_pred"].values
 
     # --------------------------------------------------------
     # Regime + Sentiment
@@ -195,6 +224,17 @@ def main():
     weights = get_base_weights(horizon)
     weights = adjust_for_regime(weights, regime)
     weights = adjust_for_sentiment(weights, sentiment_score)
+
+    # Auto-detect a "stuck" model (low prediction variance relative to
+    # actual). A degenerate model such as a TFT that collapsed to its
+    # training mean otherwise drags the whole ensemble down.
+    actual_std = float(np.std(y_true)) + 1e-9
+    for name, preds in (("lstm", lstm_pred), ("tft", tft_pred), ("prophet", prophet_pred)):
+        rel_std = float(np.std(preds)) / actual_std
+        if rel_std < 0.1:
+            print(f"⚠ {name.upper()} predictions look stuck (rel_std={rel_std:.3f}); down-weighting.")
+            weights[name] = weights[name] * 0.05
+
     weights = normalize(weights)
 
     print("Final Adaptive Weights:", weights)
@@ -207,6 +247,22 @@ def main():
         weights["tft"] * tft_pred +
         weights["prophet"] * prophet_pred
     )
+
+    # --------------------------------------------------------
+    # Partial rolling bias correction. We only remove a fraction of
+    # the lagged trailing residual so the ensemble keeps its natural
+    # ups/downs rather than collapsing onto the actual line. Uses
+    # only past (shifted) residuals — no look-ahead.
+    # --------------------------------------------------------
+    bias_alpha = 0.5  # apply 50% of trailing bias only
+    bias_window = 30
+    residuals = y_true - final_pred
+    rolling_bias = (
+        pd.Series(residuals).shift(1).rolling(bias_window, min_periods=5).mean()
+    )
+    rolling_bias = rolling_bias.fillna(0.0).values
+    final_pred = final_pred + bias_alpha * rolling_bias
+    print(f"Applied partial bias correction (alpha={bias_alpha}, window={bias_window}).")
 
     # --------------------------------------------------------
     # Evaluation
@@ -226,7 +282,7 @@ def main():
     os.makedirs("outputs", exist_ok=True)
 
     pd.DataFrame({
-        "Date": lstm["Date"],
+        "Date": merged["Date"].values,
         "Actual": y_true,
         "Dynamic_Prediction": final_pred,
         "Lower_90": lower,

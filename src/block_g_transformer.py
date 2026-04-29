@@ -132,6 +132,15 @@ def main():
 
         y_true = test_df[target].values[-len(y_pred):]
 
+        # Capture the matching dates from the test slice so downstream
+        # blocks (e.g. block_j) can align by Date.
+        if "Date" in test_df.columns:
+            y_dates = pd.to_datetime(test_df["Date"]).dt.strftime("%Y-%m-%d").values[-len(y_pred):]
+        elif isinstance(test_df.index, pd.DatetimeIndex):
+            y_dates = test_df.index.strftime("%Y-%m-%d").values[-len(y_pred):]
+        else:
+            y_dates = pd.RangeIndex(len(y_pred)).astype(str).values
+
         # -------------------------------
         # Evaluation
         # -------------------------------
@@ -147,6 +156,7 @@ def main():
         # Save predictions
         # -------------------------------
         pd.DataFrame({
+            "Date": y_dates,
             "Actual": y_true,
             "Prediction": y_pred
         }).to_csv(f"outputs/tft_predictions_{horizon}D.csv", index=False)

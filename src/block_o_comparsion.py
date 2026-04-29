@@ -30,7 +30,11 @@ def evaluate(y_true, y_pred):
 
     mae = mean_absolute_error(y_true, y_pred)
     rmse = np.sqrt(mean_squared_error(y_true, y_pred))
-    mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+    # Safe MAPE: avoid division by zero / NaN
+    y_true_arr = np.asarray(y_true, dtype=float)
+    y_pred_arr = np.asarray(y_pred, dtype=float)
+    denom = np.where(np.abs(y_true_arr) < 1e-8, 1e-8, np.abs(y_true_arr))
+    mape = np.mean(np.abs((y_true_arr - y_pred_arr) / denom)) * 100
 
     return mae, rmse, mape
 
